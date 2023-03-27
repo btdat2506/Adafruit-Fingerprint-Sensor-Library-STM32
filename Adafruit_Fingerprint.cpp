@@ -28,7 +28,7 @@
 
 #include "Adafruit_Fingerprint.h"
 
-//#define FINGERPRINT_DEBUG
+
 
 /*!
  * @brief Gets the command packet
@@ -54,25 +54,6 @@
  PUBLIC FUNCTIONS
  ***************************************************************************/
 
-#if defined(__AVR__) || defined(ESP8266) || defined(FREEDOM_E300_HIFIVE1)
-/**************************************************************************/
-/*!
-    @brief  Instantiates sensor with Software Serial
-    @param  ss Pointer to SoftwareSerial object
-    @param  password 32-bit integer password (default is 0)
-*/
-/**************************************************************************/
-Adafruit_Fingerprint::Adafruit_Fingerprint(SoftwareSerial *ss,
-                                           uint32_t password) {
-  thePassword = password;
-  theAddress = 0xFFFFFFFF;
-
-  hwSerial = NULL;
-  swSerial = ss;
-  mySerial = swSerial;
-}
-#endif
-
 /**************************************************************************/
 /*!
     @brief  Instantiates sensor with Hardware Serial
@@ -81,37 +62,16 @@ Adafruit_Fingerprint::Adafruit_Fingerprint(SoftwareSerial *ss,
 
 */
 /**************************************************************************/
-Adafruit_Fingerprint::Adafruit_Fingerprint(HardwareSerial *hs,
+Adafruit_Fingerprint::Adafruit_Fingerprint(UART_HandleTypeDef *huart,
                                            uint32_t password) {
   thePassword = password;
   theAddress = 0xFFFFFFFF;
 
-#if defined(__AVR__) || defined(ESP8266) || defined(FREEDOM_E300_HIFIVE1)
+/* #if defined(__AVR__) || defined(ESP8266) || defined(FREEDOM_E300_HIFIVE1)
   swSerial = NULL;
-#endif
-  hwSerial = hs;
+#endif */
+  hwSerial = huart;
   mySerial = hwSerial;
-}
-
-/**************************************************************************/
-/*!
-    @brief  Instantiates sensor with a stream for Serial
-    @param  serial Pointer to a Stream object
-    @param  password 32-bit integer password (default is 0)
-
-*/
-/**************************************************************************/
-
-Adafruit_Fingerprint::Adafruit_Fingerprint(Stream *serial, uint32_t password) {
-
-  thePassword = password;
-  theAddress = 0xFFFFFFFF;
-
-  hwSerial = NULL;
-#if defined(__AVR__) || defined(ESP8266) || defined(FREEDOM_E300_HIFIVE1)
-  swSerial = NULL;
-#endif
-  mySerial = serial;
 }
 
 /**************************************************************************/
@@ -120,16 +80,15 @@ Adafruit_Fingerprint::Adafruit_Fingerprint(Stream *serial, uint32_t password) {
     @param  baudrate Sensor's UART baud rate (usually 57600, 9600 or 115200)
 */
 /**************************************************************************/
-void Adafruit_Fingerprint::begin(uint32_t baudrate) {
+/*void Adafruit_Fingerprint::begin(uint32_t baudrate) {
   delay(1000); // one second delay to let the sensor 'boot up'
 
-  if (hwSerial)
-    hwSerial->begin(baudrate);
+  HAL_UART_Init(myHuart);
 #if defined(__AVR__) || defined(ESP8266) || defined(FREEDOM_E300_HIFIVE1)
   if (swSerial)
     swSerial->begin(baudrate);
 #endif
-}
+}*/
 
 /**************************************************************************/
 /*!
@@ -138,7 +97,7 @@ void Adafruit_Fingerprint::begin(uint32_t baudrate) {
     @returns True if password is correct
 */
 /**************************************************************************/
-boolean Adafruit_Fingerprint::verifyPassword(void) {
+bool Adafruit_Fingerprint::verifyPassword(void) {
   return checkPassword() == FINGERPRINT_OK;
 }
 
@@ -160,6 +119,10 @@ uint8_t Adafruit_Fingerprint::checkPassword(void) {
     @returns True if password is correct
 */
 /**************************************************************************/
+
+
+
+
 uint8_t Adafruit_Fingerprint::getParameters(void) {
   GET_CMD_PACKET(FINGERPRINT_READSYSPARAM);
 
@@ -481,57 +444,58 @@ uint8_t Adafruit_Fingerprint::setPacketSize(uint8_t size) {
 void Adafruit_Fingerprint::writeStructuredPacket(
     const Adafruit_Fingerprint_Packet &packet) {
 
-  mySerial->write((uint8_t)(packet.start_code >> 8));
-  mySerial->write((uint8_t)(packet.start_code & 0xFF));
-  mySerial->write(packet.address[0]);
-  mySerial->write(packet.address[1]);
-  mySerial->write(packet.address[2]);
-  mySerial->write(packet.address[3]);
-  mySerial->write(packet.type);
+  {
+	  uint8_t high_byte = (uint8_t) ((packet.start_code) >> 8);
+    uint8_t low_byte = (uint8_t) ((packet.start_code) & 0xFF);
+    HAL_UART_Transmit(mySerial, &high_byte, 1, TRANSMIT_TIMEOUT);
+    HAL_UART_Transmit(mySerial, &low_byte, 1, TRANSMIT_TIMEOUT);
+  }
+
+  HAL_UART_Transmit(mySerial, &packet.address[0], 1, TRANSMIT_TIMEOUT);
+  HAL_UART_Transmit(mySerial, &packet.address[1], 1, TRANSMIT_TIMEOUT);
+  HAL_UART_Transmit(mySerial, &packet.address[2], 1, TRANSMIT_TIMEOUT);
+  HAL_UART_Transmit(mySerial, &packet.address[3], 1, TRANSMIT_TIMEOUT);
+  HAL_UART_Transmit(mySerial, &packet.type, 	  1, TRANSMIT_TIMEOUT);
 
   uint16_t wire_length = packet.length + 2;
-  mySerial->write((uint8_t)(wire_length >> 8));
-  mySerial->write((uint8_t)(wire_length & 0xFF));
+  {
+	uint8_t high_byte = (uint8_t) ((wire_length) >> 8);
+    uint8_t low_byte = (uint8_t) ((wire_length) & 0xFF);
+    HAL_UART_Transmit(mySerial, &high_byte, 1, TRANSMIT_TIMEOUT);
+    HAL_UART_Transmit(mySerial, &low_byte, 1, TRANSMIT_TIMEOUT);
+  }
 
 #ifdef FINGERPRINT_DEBUG
-  Serial.print("-> 0x");
-  Serial.print((uint8_t)(packet.start_code >> 8), HEX);
-  Serial.print(", 0x");
-  Serial.print((uint8_t)(packet.start_code & 0xFF), HEX);
-  Serial.print(", 0x");
-  Serial.print(packet.address[0], HEX);
-  Serial.print(", 0x");
-  Serial.print(packet.address[1], HEX);
-  Serial.print(", 0x");
-  Serial.print(packet.address[2], HEX);
-  Serial.print(", 0x");
-  Serial.print(packet.address[3], HEX);
-  Serial.print(", 0x");
-  Serial.print(packet.type, HEX);
-  Serial.print(", 0x");
-  Serial.print((uint8_t)(wire_length >> 8), HEX);
-  Serial.print(", 0x");
-  Serial.print((uint8_t)(wire_length & 0xFF), HEX);
+  debug_print("-> 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X", (uint8_t)(packet.start_code >> 8),
+                                                                        (uint8_t)(packet.start_code & 0xFF),
+                                                                        packet.address[0],
+                                                                        packet.address[1],
+                                                                        packet.address[2],
+                                                                        packet.address[3],
+                                                                        packet.type,
+                                                                        (uint8_t)(wire_length >> 8),
+                                                                        (uint8_t)(wire_length & 0xFF));
 #endif
 
   uint16_t sum = ((wire_length) >> 8) + ((wire_length)&0xFF) + packet.type;
   for (uint8_t i = 0; i < packet.length; i++) {
-    mySerial->write(packet.data[i]);
+	HAL_UART_Transmit(mySerial, &packet.data[i], 1, TRANSMIT_TIMEOUT);
     sum += packet.data[i];
 #ifdef FINGERPRINT_DEBUG
-    Serial.print(", 0x");
-    Serial.print(packet.data[i], HEX);
+    debug_print(", 0x%X", packet.data[i]);
 #endif
   }
 
-  mySerial->write((uint8_t)(sum >> 8));
-  mySerial->write((uint8_t)(sum & 0xFF));
+  {
+	uint8_t high_byte = (uint8_t) ((sum) >> 8);
+    uint8_t low_byte = (uint8_t) ((sum) & 0xFF);
+    HAL_UART_Transmit(mySerial, &high_byte, 1, TRANSMIT_TIMEOUT);
+    HAL_UART_Transmit(mySerial, &low_byte, 1, TRANSMIT_TIMEOUT);
+  }
 
 #ifdef FINGERPRINT_DEBUG
-  Serial.print(", 0x");
-  Serial.print((uint8_t)(sum >> 8), HEX);
-  Serial.print(", 0x");
-  Serial.println((uint8_t)(sum & 0xFF), HEX);
+  debug_println(", 0x%X, 0x%X", (uint8_t)(sum >> 8),
+                           (uint8_t)(sum & 0xFF));
 #endif
 
   return;
@@ -548,32 +512,23 @@ void Adafruit_Fingerprint::writeStructuredPacket(
    <code>FINGERPRINT_BADPACKET</code> on failure
 */
 /**************************************************************************/
+
 uint8_t
 Adafruit_Fingerprint::getStructuredPacket(Adafruit_Fingerprint_Packet *packet,
                                           uint16_t timeout) {
   uint8_t byte;
-  uint16_t idx = 0, timer = 0;
+  uint8_t buf[300] = {0,};
+  HAL_UART_Receive(mySerial, buf, 300, 1000);
 
 #ifdef FINGERPRINT_DEBUG
-  Serial.print("<- ");
+  debug_print("<- ");
 #endif
 
-  while (true) {
-    while (!mySerial->available()) {
-      delay(1);
-      timer++;
-      if (timer >= timeout) {
+  for (uint16_t idx = 0; idx < 300; idx++)
+  {
+    byte = buf[idx];
 #ifdef FINGERPRINT_DEBUG
-        Serial.println("Timed out");
-#endif
-        return FINGERPRINT_TIMEOUT;
-      }
-    }
-    byte = mySerial->read();
-#ifdef FINGERPRINT_DEBUG
-    Serial.print("0x");
-    Serial.print(byte, HEX);
-    Serial.print(", ");
+    debug_print("0x%X,", byte);
 #endif
     switch (idx) {
     case 0:
@@ -605,13 +560,13 @@ Adafruit_Fingerprint::getStructuredPacket(Adafruit_Fingerprint_Packet *packet,
       packet->data[idx - 9] = byte;
       if ((idx - 8) == packet->length) {
 #ifdef FINGERPRINT_DEBUG
-        Serial.println(" OK ");
+    	  debug_println(" OK ");
 #endif
         return FINGERPRINT_OK;
       }
       break;
     }
-    idx++;
+
     if ((idx + 9) >= sizeof(packet->data)) {
       return FINGERPRINT_BADPACKET;
     }
@@ -619,3 +574,32 @@ Adafruit_Fingerprint::getStructuredPacket(Adafruit_Fingerprint_Packet *packet,
   // Shouldn't get here so...
   return FINGERPRINT_BADPACKET;
 }
+
+
+void Adafruit_Fingerprint::debug_print(const char *format, ...) {
+  char buffer[256];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+
+  HAL_UART_Transmit(&huart2, (uint8_t *)buffer, strlen(buffer), 30);
+}
+
+void Adafruit_Fingerprint::debug_println(const char *format, ...) {
+  char buffer[256];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+
+  size_t len = strlen(buffer);
+  if (len < sizeof(buffer) - 2) {
+    // Add "\r\n" at the end of the string
+    buffer[len++] = '\r';
+    buffer[len++] = '\n';
+  }
+  
+  HAL_UART_Transmit(&huart2, (uint8_t *)buffer, len, 30);
+}
+
